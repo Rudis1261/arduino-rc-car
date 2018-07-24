@@ -19,14 +19,13 @@
 #define MOTOR_PIN_FORWARD 11
 #define MOTOR_PIN_REVERSE 12
 #define MOTOR_PIN_PWM 5
-#define FAILSAFE_COUNTER 50
+#define FAILSAFE_COUNTER 500
 
 RH_ASK rf_driver(4000, RX_PIN, TX_PIN);
 
 int failSafeCounter = 0;
 int throttleValue = 100;
 int steeringValue = 100;
-boolean moveClockwise = true;
 
 void setup()
 {
@@ -115,14 +114,12 @@ void processMessage(String message)
     }
   }
 
-  // Which direction the motor turns
-  moveClockwise = throttleValue > 100;
-
   // Should it move?
   if (throttleValue == 100) {
-    Serial.println("Motor Should turn");
+    Serial.println("Stop");
     stop();
   } else {
+    Serial.println("Running");
     runMotor();
   }
 
@@ -149,7 +146,8 @@ void loop()
   {
     // Message received with valid checksum
     Serial.print("Message Received: ");
-    processMessage(String((char*)buf));        
+    processMessage(String((char*)buf)); 
+    failSafeCounter = 0;     
   } else {
     if (failSafeCounter > FAILSAFE_COUNTER) {
       blink();
