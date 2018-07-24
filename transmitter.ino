@@ -24,9 +24,9 @@ RH_ASK rf_driver(4000, RX_PIN, TX_PIN);
 #define THROTTLE_AXIS A0
 #define THROTTLE_UPPER 1000
 #define THROTTLE_CENTER 532
-#define THROTTLE_LOWER 0
+#define THROTTLE_LOWER 20
 #define THROTTLE_DEADZONE 5 // %
-#define THROTTLE_SMOOTHING 10
+#define THROTTLE_SMOOTHING 3
 
 int last_throttle_position = 100;
 int throttle_sample_index = 0;
@@ -131,9 +131,9 @@ int calculateThrottle() {
     throttleSpeed = percentileThrottle;    
   }
 
-  throttle_sample_index += 1;
-  throttle_sample_index = throttle_sample_index % int(THROTTLE_SMOOTHING);
-  throttle_samples[throttle_sample_index] = throttleSpeed;
+//  throttle_sample_index += 1;
+//  throttle_sample_index = throttle_sample_index % int(THROTTLE_SMOOTHING);
+//  throttle_samples[throttle_sample_index] = throttleSpeed;
 
   // Check if within deadzone
   if (deadZone) {
@@ -141,7 +141,8 @@ int calculateThrottle() {
     throttleSpeed = 100;
   }
 
-  int currentThrottle = average(throttle_samples, int(THROTTLE_SMOOTHING));
+//  int currentThrottle = average(throttle_samples, int(THROTTLE_SMOOTHING));
+  int currentThrottle = throttleSpeed;
   if (debug) Serial.println(", CTH: " + String(currentThrottle));
   return currentThrottle;
 }
