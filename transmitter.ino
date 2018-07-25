@@ -1,10 +1,4 @@
 /*
-  433 MHz RF Module Transmitter Demonstration 1
-  RF-Xmit-Demo-1.ino
-  Demonstrates 433 MHz RF Transmitter Module
-  Use with Receiver Demonstration 1
-
-  DroneBot Workshop 2018
   https://dronebotworkshop.com
 */
 
@@ -25,17 +19,17 @@ RH_ASK rf_driver(4000, RX_PIN, TX_PIN);
 #define THROTTLE_UPPER 950
 #define THROTTLE_CENTER 535
 #define THROTTLE_LOWER 30
-#define THROTTLE_DEADZONE 5 // %
+#define THROTTLE_DEADZONE 2 // %
 
 #define STEERING_AXIS A1
 #define STEERING_UPPER 950
 #define STEERING_CENTER 532
 #define STEERING_LOWER 50
-#define STEERING_DEADZONE 5 // %
-
-boolean debug = true;
+#define STEERING_DEADZONE 2 // %
 
 #define LEDPIN 13
+
+boolean debug = true;
 
 void setup()
 {
@@ -78,6 +72,7 @@ boolean isDeadZone(int value, int center, int deadzone_threshold)
   return (ratio > (1 - deadzone) && (ratio < (1 + deadzone)));
 }
 
+// map(potValue, 0, 1023, 0, 179)
 float percentile(int value, int lower, int upper, boolean reverse=false) 
 {
   float percent = (float(value) - float(lower)) / (float(upper) - float(lower)) * 100;
