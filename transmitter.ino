@@ -1,54 +1,91 @@
 /*
-  433 MHz RF Module Receiver Demonstration 1
-  RF-Rcv-Demo-1.ino
-  Demonstrates 433 MHz RF Receiver Module
-  Use with Transmitter Demonstration 1
+  433 MHz RF Module Transmitter Demonstration 1
+  RF-Xmit-Demo-1.ino
+  Demonstrates 433 MHz RF Transmitter Module
+  Use with Receiver Demonstration 1
 
   DroneBot Workshop 2018
   https://dronebotworkshop.com
 */
 
+#include <stdlib.h>
+
 // Include RadioHead Amplitude Shift Keying Library
 #include <RH_ASK.h>
+// Include dependant SPI Library 
 #include <SPI.h> 
 
 // Create Amplitude Shift Keying Object
-#define LEDPIN 13
 #define TX_PIN 2
 #define RX_PIN 3
-#define MOTOR_PIN_FORWARD 11
-#define MOTOR_PIN_REVERSE 12
-#define MOTOR_PIN_PWM 5
-#define FAILSAFE_COUNTER 100
-
 RH_ASK rf_driver(4000, RX_PIN, TX_PIN);
 
-int failSafeCounter = 0;
-int throttleValue = 100;
-int steeringValue = 100;
+// Remote control stuffs
+#define THROTTLE_AXIS A0
+#define THROTTLE_UPPER 950
+#define THROTTLE_CENTER 535
+#define THROTTLE_LOWER 30
+#define THROTTLE_DEADZONE 5 // %
+
+#define STEERING_AXIS A1
+#define STEERING_UPPER 950
+#define STEERING_CENTER 532
+#define STEERING_LOWER 50
+#define STEERING_DEADZONE 5 // %
+
+boolean debug = true;
+
+#define LEDPIN 13
 
 void setup()
 {
-  pinMode(MOTOR_PIN_FORWARD, OUTPUT);
-  pinMode(MOTOR_PIN_REVERSE, OUTPUT);
-  pinMode(MOTOR_PIN_PWM, OUTPUT);
   pinMode(LEDPIN, OUTPUT);
-  
+   
   // Initialize ASK Object
   rf_driver.init();
-  
-  // Setup Serial Monitor
-  Serial.begin(9600);  
+  Serial.begin(9600);
+}
+
+
+boolean isReverse(int value, int center, int deadzone_threshold)
+{
+  float ratio = float(center) / float(value);
+  float deadzone = float(deadzone_threshold) / float(100);
+  return (ratio > (1 + deadzone));
+}
+
+boolean isForward(int value, int center, int deadzone_threshold)
+{
+  float ratio = float(center) / float(value);
+  float deadzone = float(deadzone_threshold) / float(100);
+  return (ratio < (1 - deadzone));
+}
+
+boolean isLeft(int value, int center, int deadzone_threshold) 
+{
+  return isReverse(value, center, deadzone_threshold);
+}
+
+boolean isRight(int value, int center, int deadzone_threshold)
+{
+  return isForward(value, center, deadzone_threshold);
+}
+
+boolean isDeadZone(int value, int center, int deadzone_threshold)
+{
+  float ratio = float(center) / float(value);
+  float deadzone = float(deadzone_threshold) / float(100);
+  return (ratio > (1 - deadzone) && (ratio < (1 + deadzone)));
 }
 
 float percentile(int value, int lower, int upper, boolean reverse=false) 
 {
-  float percent = (float(value) - float(lower)) / (float(upper) - float(lower)) * 255;
+  float percent = (float(value) - float(lower)) / (float(upper) - float(lower)) * 100;
   if (reverse) {
-    percent = 255 - percent;
+    percent = 100 - percent;
   }
-  if (percent > float(255)) {
-    return float(20);
+  if (percent > float(100)) {
+    return float(100);
   }
   if (percent < float(0)) {
     return float(0);
@@ -56,105 +93,93 @@ float percentile(int value, int lower, int upper, boolean reverse=false)
   return percent;
 }
 
-void stop()
-{
-  digitalWrite(MOTOR_PIN_FORWARD, LOW);
-  digitalWrite(MOTOR_PIN_REVERSE, LOW);
-  analogWrite(MOTOR_PIN_PWM, 0);
-  failSafeCounter = 0;
-}
 
-void forward()
-{
-  digitalWrite(MOTOR_PIN_FORWARD, HIGH);
-  digitalWrite(MOTOR_PIN_REVERSE, LOW);
-}
+// Throttle is 100 for neutral
+// 0 for reverse full speed.
+// 200 full speed forward
+int calculateThrottle() {
 
-void reverse()
-{
-  digitalWrite(MOTOR_PIN_FORWARD, LOW);
-  digitalWrite(MOTOR_PIN_REVERSE, HIGH);
+  int throttleSpeed = 100;
+  int sensorValue = analogRead(THROTTLE_AXIS);
+  boolean deadZone = isDeadZone(sensorValue, THROTTLE_CENTER, THROTTLE_DEADZONE);
+  if (debug) Serial.print("V: " + String(sensorValue) + ", D: " + String(deadZone));
 
-}
-
-void runMotor()
-{
-  failSafeCounter = 0;
-  int speed = 0;
-  if (throttleValue > 100) {
-    speed = throttleValue - 100;
-    forward(); 
-  } else {
-    speed = 100 - throttleValue;
-    reverse();
+  // Forward
+  if (isForward(sensorValue, THROTTLE_CENTER, THROTTLE_DEADZONE)) {
+    float percentileThrottle = int(percentile(sensorValue, THROTTLE_CENTER, THROTTLE_UPPER));
+    if (debug) Serial.print(", P: F, %TH: " + String(percentileThrottle));
+    throttleSpeed = 100 + percentileThrottle;    
   }
 
-  if (speed > 80)
-      analogWrite(MOTOR_PIN_PWM, int(speed * 2.55));
-  else if (speed > 70)
-      analogWrite(MOTOR_PIN_PWM, int(speed * 2.10));
-  else if (speed > 60)
-      analogWrite(MOTOR_PIN_PWM, int(speed * 1.80));
-  else
-      analogWrite(MOTOR_PIN_PWM, int(speed * 1.5));
+  // Reverse
+  if (isReverse(sensorValue, THROTTLE_CENTER, THROTTLE_DEADZONE)) {
+    float percentileThrottle = int(percentile(sensorValue, THROTTLE_LOWER, THROTTLE_CENTER));
+    if (debug) Serial.print(", P: R, %TH: " + String(percentileThrottle));
+    throttleSpeed = percentileThrottle;    
+  }
+
+  // Check if within deadzone
+  if (deadZone) {
+    if (debug) Serial.print(", P: DZ, %TH: 0");
+    throttleSpeed = 100;
+  }
+
+  int currentThrottle = throttleSpeed;
+  if (debug) Serial.print(", CTH: " + String(currentThrottle));
+  return currentThrottle;
 }
 
-void processMessage(String message)
-{
-  Serial.println(message);
-  throttleValue = 100;
-  steeringValue = 100;
 
-  for (int i = 0; i < message.length(); i++) {
-    if (message.substring(i, i+1) == ":") {
-      Serial.println("FOUND DELIMITER");
-      throttleValue = message.substring(0, i).toInt();
-      steeringValue = message.substring(i+1).toInt();
-      break;
-    }
+// Throttle is 100 for neutral
+// 0 for reverse full left.
+// 200 full right
+int calculateSteering() {
+  int steering = 100;
+  int sensorValue = analogRead(STEERING_AXIS);
+  boolean deadZone = isDeadZone(sensorValue,STEERING_CENTER,STEERING_DEADZONE);
+  if (debug) Serial.print(" ||| SV: " + String(sensorValue) + ", D: " + String(deadZone));
+
+  // Right
+  if (isRight(sensorValue, STEERING_CENTER, STEERING_DEADZONE)) {
+    float percentileSteering = int(percentile(sensorValue, STEERING_CENTER, STEERING_UPPER));
+    if (debug) Serial.print(", SP: R, %ST: " + String(percentileSteering));
+    steering = 100 + percentileSteering;    
   }
 
-  // Should it move?
-  if (throttleValue == 100) {
-    Serial.println("Stop");
-    stop();
-  } else {
-    Serial.println("Running");
-    runMotor();
+  // Left
+  if (isLeft(sensorValue, STEERING_CENTER, STEERING_DEADZONE)) {
+    float percentileSteering = int(percentile(sensorValue, STEERING_LOWER, STEERING_CENTER));
+    if (debug) Serial.print(", SP: L, %ST: " + String(percentileSteering));
+    steering = percentileSteering;    
   }
 
-  Serial.println("TH: " + String(throttleValue) + ", ST: " + String(steeringValue));
+  // Check if within deadzone
+  if (deadZone) {
+    if (debug) Serial.print(", SP: SDZ, %ST: 0");
+    steering = 100;
+  }
+
+  int currentSteering = steering;
+  if (debug) Serial.println(", CST: " + String(currentSteering));
+  return currentSteering;
 }
 
-void blink(int times = 5)
+// Axis are 0 - 200 where 100 is the center point
+// Delimiter is the | character
+// Separator is :   
+void sendMessage()
 {
-  for(int i = 0; i < times; i++) {
-    digitalWrite(LEDPIN, LOW);
-    delay(100);
-    digitalWrite(LEDPIN, HIGH);
-    delay(100);
-  }
+  String msg = String(calculateThrottle()) + ":" + String(calculateSteering()) + "|";
+  int str_len = msg.length() + 1;
+  char char_array[str_len];
+  msg.toCharArray(char_array, msg.length());
+  
+  rf_driver.send(char_array, str_len);   
+  if (!debug) Serial.println("Sending message: " + String(msg));
 }
 
 void loop()
-{
-  uint8_t buf[11];
-  uint8_t buflen = sizeof(buf);
-    
-  // Check if received packet is correct size
-  if (rf_driver.recv(buf, &buflen))
-  {
-    // Message received with valid checksum
-    Serial.print("Message Received: ");
-    processMessage(String((char*)buf));  
-  } else {
-    if (failSafeCounter > FAILSAFE_COUNTER) {
-      blink();
-      stop();
-    }
-    failSafeCounter = failSafeCounter + 1;
-  }
-
-  digitalWrite(LEDPIN, LOW);
+{ 
+  sendMessage();
   delay(10);
 }
