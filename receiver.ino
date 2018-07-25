@@ -163,7 +163,7 @@ void loop()
     Serial.println("");
   } else {
     if (failSafeCounter > FAILSAFE_COUNTER) {
-//      blink();
+      blink();
       stop();
     }
     failSafeCounter = failSafeCounter + 1;
