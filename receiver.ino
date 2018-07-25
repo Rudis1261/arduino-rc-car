@@ -1,15 +1,9 @@
 /*
-  433 MHz RF Module Receiver Demonstration 1
-  RF-Rcv-Demo-1.ino
-  Demonstrates 433 MHz RF Receiver Module
-  Use with Transmitter Demonstration 1
-
-  DroneBot Workshop 2018
   https://dronebotworkshop.com
 */
 
-// Include RadioHead Amplitude Shift Keying Library
 #include <RH_ASK.h>
+#include <SoftwareServo.h>
 #include <SPI.h> 
 
 // Create Amplitude Shift Keying Object
@@ -19,9 +13,11 @@
 #define MOTOR_PIN_FORWARD 11
 #define MOTOR_PIN_REVERSE 12
 #define MOTOR_PIN_PWM 5
+#define STEERING_PIN_PWM 6
 #define FAILSAFE_COUNTER 100
 
 RH_ASK rf_driver(4000, RX_PIN, TX_PIN);
+SoftwareServo servo;
 
 int failSafeCounter = 0;
 int throttleValue = 100;
@@ -32,10 +28,14 @@ void setup()
   pinMode(MOTOR_PIN_FORWARD, OUTPUT);
   pinMode(MOTOR_PIN_REVERSE, OUTPUT);
   pinMode(MOTOR_PIN_PWM, OUTPUT);
+  pinMode(STEERING_PIN_PWM, OUTPUT);
   pinMode(LEDPIN, OUTPUT);
   
   // Initialize ASK Object
   rf_driver.init();
+
+  // Servo
+  servo.attach(STEERING_PIN_PWM);
   
   // Setup Serial Monitor
   Serial.begin(9600);  
@@ -60,7 +60,7 @@ void stop()
 {
   digitalWrite(MOTOR_PIN_FORWARD, LOW);
   digitalWrite(MOTOR_PIN_REVERSE, LOW);
-  analogWrite(MOTOR_PIN_PWM, 0);
+  servo.write(90);
   failSafeCounter = 0;
 }
 
@@ -94,20 +94,32 @@ void runMotor()
   else if (speed > 70)
       analogWrite(MOTOR_PIN_PWM, int(speed * 2.10));
   else if (speed > 60)
-      analogWrite(MOTOR_PIN_PWM, int(speed * 1.50));
+      analogWrite(MOTOR_PIN_PWM, int(speed * 1.80));
   else
-      analogWrite(MOTOR_PIN_PWM, int(speed));
+      analogWrite(MOTOR_PIN_PWM, int(speed * 1.5));
+}
+
+void runSteering()
+{
+  failSafeCounter = 0;
+  if (steeringValue == 100) {
+    Serial.print(", S: CENTER");
+    servo.write(90);
+    return;
+  }
+
+  int steering = int((steeringValue / 2) * 1.8);
+  Serial.print(", S: " + String(steering));
+  servo.write(steering);
 }
 
 void processMessage(String message)
 {
-  Serial.println(message);
   throttleValue = 100;
   steeringValue = 100;
 
   for (int i = 0; i < message.length(); i++) {
     if (message.substring(i, i+1) == ":") {
-      Serial.println("FOUND DELIMITER");
       throttleValue = message.substring(0, i).toInt();
       steeringValue = message.substring(i+1).toInt();
       break;
@@ -116,14 +128,15 @@ void processMessage(String message)
 
   // Should it move?
   if (throttleValue == 100) {
-    Serial.println("Stop");
+    Serial.print(", MOTOR: Stopped");
     stop();
   } else {
-    Serial.println("Running");
+    Serial.print(", MOTOR: Running");
     runMotor();
   }
 
-  Serial.println("TH: " + String(throttleValue) + ", ST: " + String(steeringValue));
+  runSteering();
+  Serial.print(", TH: " + String(throttleValue) + ", ST: " + String(steeringValue));
 }
 
 void blink(int times = 5)
@@ -145,17 +158,17 @@ void loop()
   if (rf_driver.recv(buf, &buflen))
   {
     // Message received with valid checksum
-    Serial.print("Message Received: ");
-    processMessage(String((char*)buf)); 
-    failSafeCounter = 0;     
+    Serial.print("MSG: " + String((char*)buf));
+    processMessage(String((char*)buf));  
+    Serial.println("");
   } else {
     if (failSafeCounter > FAILSAFE_COUNTER) {
-      blink();
+//      blink();
       stop();
     }
     failSafeCounter = failSafeCounter + 1;
   }
 
-  digitalWrite(LEDPIN, LOW);
   delay(10);
+  SoftwareServo::refresh();
 }
